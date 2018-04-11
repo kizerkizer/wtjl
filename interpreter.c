@@ -54,6 +54,9 @@
 
 int j_mem_offset = 0;
 
+size_t j_mem_total_alloc = 0;
+size_t j_mem_total_free = 0;
+
 typedef struct _mem_node_t {
   void *ptr;
   size_t size;
@@ -67,6 +70,7 @@ void *_jmalloc (size_t size) {
   if (J_MEM_DEBUG) {
     printf("(malloc) " CLR_YEL "%d\n" CLR_NRM, (int) size);
   }
+  j_mem_total_alloc += size;
   if (_mem_list_tail == NULL) {
     _mem_list_head = calloc(1, sizeof(_mem_node_t));
     _mem_list_tail = _mem_list_head;
@@ -102,6 +106,7 @@ void _jfree (void *ptr) {
     if (J_MEM_DEBUG) {
       printf("free %d\n", (int) node->size);
     }
+    j_mem_total_free += node->size;
     if (_mem_list_head == node) {
       _mem_list_head = prev_node;
     }
@@ -1314,6 +1319,8 @@ void test_memory () {
   if (J_MEM_DEBUG) {
     printf("%d bytes not free'd\n", (int) (j_mem_size() - glbl_tests_mem_start));
   }
+  printf("%d bytes malloc'd\n", (int) j_mem_total_alloc);
+  printf("%d bytes free'd\n", (int) j_mem_total_free);
   if (j_mem_size() - glbl_tests_mem_start) {
     TEST_FAIL;
   } else {
@@ -1327,6 +1334,8 @@ void test_memory () {
 
 void run_tests () {
   glbl_tests_mem_start = j_mem_size();
+  j_mem_total_alloc = 0;
+  j_mem_total_free = 0;
   TESTS_PRELUDE;
   test_ll();
   test_memory();
@@ -1359,7 +1368,7 @@ int main (int argc, char **argv) {
   SETUP_MODULE(parser)
   begin();
   cleanup();
-  printf(CLR_YEL "%d bytes\n" CLR_NRM, (int) j_mem_size());
+  printf(CLR_YEL "%d bytes still allocated\n" CLR_NRM, (int) j_mem_size());
   return 0;
 }
 
