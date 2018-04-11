@@ -92,8 +92,11 @@ void _jfree (void *ptr) {
     return;
   }
   _mem_node_t *node = _mem_list_head;
-  _mem_node_t *prev_node = NULL;
-  while (node) {
+  _mem_node_t *prev_node = node;
+  if (!node) {
+    goto finish;
+  }
+  while (node->next) {
     if (node->ptr == ptr) {
       break;
     }
@@ -107,12 +110,19 @@ void _jfree (void *ptr) {
     if (J_MEM_DEBUG) {
       printf("jfree %d\n", (int) node->size);
     }
+    if (_mem_list_head == node) {
+      _mem_list_head = prev_node;
+    }
+    if (_mem_list_tail == node) {
+      _mem_list_tail = prev_node;
+    }
     free(node->ptr);
     free(node);
-  } else {
-    printf(CLR(RED, "Warning: jfree non jmalloc'd ptr.\n"));
-    free(ptr);
+    return;
   }
+  finish:
+  printf(CLR(RED, "Warning: jfree non jmalloc'd ptr.\n"));
+  free(ptr);
 }
 
 size_t j_mem_size () {
@@ -465,15 +475,19 @@ void _ll_add (ll_t* list, void *value) {
   _ll_item_t *item = jmalloc(sizeof(_ll_item_t));
   item->_value = value;
   item->_next = NULL;
+  item->_prev = NULL;
   if (!list->_first) {
     list->_first = item;
     list->_last = item;
   } else {
-    list->_last->_next = item;
+    if (list->_last) {
+      list->_last->_next = item;
+    }
     item->_prev = list->_last;
     list->_last = item;
   }
   list->_num_elements++;
+  list->_last = item;
 }
 
 void _ll_set_last (ll_t *list, size_t index, _ll_item_t *item) {
@@ -494,41 +508,71 @@ _ll_item_t* _ll_get_start_item (ll_t *list, size_t index) {
   }
 }
 
-size_t _ll_get_start_index (ll_t *list) {
-  return list->_last_index;
+size_t _ll_get_start_index (ll_t *list, size_t index) {
+  if (index >= list->_last_index && list->_last_accessed) {
+    return list->_last_index;
+  } else {
+    _ll_reset(list);
+    return 0;
+  }
 }
 
-void *_ll_get (ll_t *list, size_t index) {
-  if (index >= list->_num_elements) {
+_ll_item_t *_ll_get_item (ll_t *list, size_t index, bool set_last) {
+  if (index >= list->_num_elements || !list->_first) {
     return NULL;
   }
 
   _ll_item_t *item = _ll_get_start_item(list, index);
-  size_t _index = _ll_get_start_index(list);
+  size_t _index = _ll_get_start_index(list, index);
 
-  _ll_item_t *next;
-  int i;
-  for (
-       i = _index, next = (item ? item->_next : NULL);
-       next && i < index;
-       item = next, next = next->_next, _index = i, i++
-       ) {};
+  int i = _index;
 
-  _ll_set_last(list, _index, item);
+  while (i < index) {
+    item = item->_next;
+    i++;
+  }
+
+  if (set_last) {
+    // TODO uncomment:
+    //_ll_set_last(list, _index, item);
+  }
+
+  return item;
+}
+
+void *_ll_get (ll_t *list, size_t index) {
+  _ll_item_t *item = _ll_get_item(list, index, true);
   return item ? item->_value : NULL;
 }
 
 void _ll_remove (ll_t *list, size_t index) {
+  _ll_item_t *item = _ll_get_item(list, index, false);
   _ll_reset(list);
-  _ll_item_t *item = _ll_get(list, index);
   if (item) {
-    if (item->_prev) {
+    if (item->_prev && item->_next) {
+      item->_prev->_next = item->_next;
+      item->_next->_prev = item->_prev;
+    } else if (item->_next) {
+      item->_next->_prev = item->_prev;
+    } else if (item->_prev) {
       item->_prev->_next = item->_next;
     }
-    if (item->_next) {
-      item->_next->_prev = item->_prev;
-    }
+  } else {
+    return;
   }
+  _ll_item_t *replacement = NULL;
+  if (item->_next) {
+    replacement = item->_next;
+  } else if (item->_prev) {
+    replacement = item->_prev;
+  }
+  if (list->_first == item) {
+    list->_first = replacement;
+  }
+  if (list->_last == item) {
+    list->_last = replacement;
+  }
+  list->_num_elements--;
   jfree(item);
 }
 
@@ -1179,6 +1223,73 @@ void begin () {
 
 /* ``begin test ll */
 
+void test_ll_iterate () {
+  ll_t *list = ll.new();
+  for (int i = 0; i < 100; i++) {
+    ll.add(list, "hello, world");
+  }
+  for (int i = 0; i < 100; i++) {
+    if (strcmp(ll.get(list, i), "hello, world") != 0) {
+      printf("bad str cmp\n");
+      TEST_FAIL;
+      return;
+    }
+  }
+  for (int i = 0; i < 100; i++) {
+    ll.remove(list, ll.size(list) - 1);
+  }
+  if (ll.get(list, 0)) {
+    printf("bad first\n");
+    TEST_FAIL;
+    return;
+  }
+  if (ll.size(list)) {
+    printf("bad size\n");
+    TEST_FAIL;
+    return;
+  }
+  ll.delete(list);
+  TEST_PASS;
+}
+
+void test_ll_basic () {
+  ll_t *list = ll.new();
+  if (!list) {
+    TEST_FAIL;
+    return;
+  }
+  char *foo = "foo";
+  char *bar = "bar";
+  ll.add(list, foo);
+  ll.add(list, bar);
+  if (((char *) ll.get(list, 0)) != foo) {
+    TEST_FAIL;
+    return;
+  }
+  if (((char *) ll.get(list, 1)) != bar) {
+    TEST_FAIL;
+    return;
+  }
+  ll.remove(list, 0);
+  if (((char *) ll.get(list, 0)) != bar) {
+    printf("not bar %s\n", (char *) ll.get(list, 0));
+    TEST_FAIL;
+    return;
+  }
+  ll.remove(list, 0);
+  if (((char *) ll.get(list, 0)) != NULL) {
+    TEST_FAIL;
+    return;
+  }
+  ll.remove(list, 0);
+  if (((char *) ll.get(list, 0)) != NULL) {
+    TEST_FAIL;
+    return;
+  }
+  ll.delete(list);
+  TEST_PASS;
+}
+
 void test_ll_new_delete () {
   ll_t *list = ll.new();
   if (!list) {
@@ -1193,6 +1304,8 @@ void test_ll_new_delete () {
 void test_ll () {
   TEST_SUITE;
   test_ll_new_delete();
+  test_ll_basic();
+  test_ll_iterate();
 }
 
 /* end test ll */
@@ -1203,7 +1316,7 @@ void test_memory () {
   TEST_SUITE;
   if (J_MEM_DEBUG) {
     printf("%d bytes not jfree'd\n", (int) (j_mem_size() - glbl_tests_mem_start));
- }
+  }
   if (j_mem_size() - glbl_tests_mem_start) {
     TEST_FAIL;
   } else {
