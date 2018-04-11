@@ -23,15 +23,7 @@
 
 /* ``begin macros */
 
-// #define REAL_ALLOC
-
-#ifdef REAL_ALLOC 
-  #define jmalloc(size) malloc(size)
-  #define jfree(ptr) free(ptr)
-#else
-  #define jmalloc(size) _jmalloc(size)
-  #define jfree(ptr) _jfree(ptr)
-#endif
+#define TRACK_MEM
 
 #define J_MEM_DEBUG false
 
@@ -73,7 +65,7 @@ _mem_node_t *_mem_list_tail = NULL;
 
 void *_jmalloc (size_t size) {
   if (J_MEM_DEBUG) {
-    printf("(jmalloc) " CLR_YEL "%d\n" CLR_NRM, (int) size);
+    printf("(malloc) " CLR_YEL "%d\n" CLR_NRM, (int) size);
   }
   if (_mem_list_tail == NULL) {
     _mem_list_head = calloc(1, sizeof(_mem_node_t));
@@ -108,7 +100,7 @@ void _jfree (void *ptr) {
       prev_node->next = node->next;
     }
     if (J_MEM_DEBUG) {
-      printf("jfree %d\n", (int) node->size);
+      printf("free %d\n", (int) node->size);
     }
     if (_mem_list_head == node) {
       _mem_list_head = prev_node;
@@ -121,7 +113,7 @@ void _jfree (void *ptr) {
     return;
   }
   finish:
-  printf(CLR(RED, "Warning: jfree non jmalloc'd ptr.\n"));
+  printf(CLR(RED, "Warning: free non malloc'd ptr.\n"));
   free(ptr);
 }
 
@@ -146,6 +138,11 @@ void j_mem_reset () {
   _mem_list_head = NULL;
   _mem_list_tail = NULL;*/
 }
+
+#ifdef TRACK_MEM
+  #define malloc(size) _jmalloc(size)
+  #define free(ptr) _jfree(ptr)
+#endif
 
 /* end memory tracking */
 
@@ -343,7 +340,7 @@ typedef struct arguments_t {
 const int ARGUMENT_COUNT = 2;
 
 void *arguments_t_new () {
-  arguments_t *arguments = jmalloc(sizeof(arguments_t));
+  arguments_t *arguments = malloc(sizeof(arguments_t));
   arguments->valid = true;
   arguments->difference_from_correct = 0;
   arguments->program_name = NULL;
@@ -354,14 +351,14 @@ void *arguments_t_new () {
 
 void arguments_t_set_program_name (arguments_t *arguments, char *program_name) {
   if (arguments->program_name == NULL) {
-    arguments->program_name = jmalloc(strlen(program_name) + 1);
+    arguments->program_name = malloc(strlen(program_name) + 1);
   }
   strcpy(arguments->program_name, program_name);
 }
 
 void arguments_t_set_file_name (arguments_t *arguments, char *file_name) {
   if (arguments->file_name == NULL) {
-    arguments->file_name = jmalloc(strlen(file_name) + 1);
+    arguments->file_name = malloc(strlen(file_name) + 1);
   }
   strcpy(arguments->file_name, file_name);
 }
@@ -370,9 +367,9 @@ void arguments_t_destroy (arguments_t *arguments) {
   if (arguments == NULL) {
     return;
   }
-  jfree(arguments->program_name);
-  jfree(arguments->file_name);
-  jfree(arguments);
+  free(arguments->program_name);
+  free(arguments->file_name);
+  free(arguments);
 }
 
 arguments_t *arguments_t_parse_arguments (int argc, char **argv) {
@@ -392,10 +389,10 @@ arguments_t *arguments_t_parse_arguments (int argc, char **argv) {
   arguments->valid = true;
   for (int i = 0; i < argc; i++) {
     if (i == 0) {
-      arguments->program_name = jmalloc(strlen(argv[i]) + 1);
+      arguments->program_name = malloc(strlen(argv[i]) + 1);
       arguments_t_set_program_name(arguments, argv[i]);
     } else if (i == 1) {
-      arguments->file_name = jmalloc(strlen(argv[i]) + 1);
+      arguments->file_name = malloc(strlen(argv[i]) + 1);
       arguments_t_set_file_name(arguments, argv[i]);
     } else {
       break;
@@ -432,7 +429,7 @@ void cleanup () {
 /* ``begin ll */
 
 ll_t *_ll_new () {
-  ll_t *list = jmalloc(sizeof(ll_t));
+  ll_t *list = malloc(sizeof(ll_t));
   list->_first = NULL;
   list->_last = NULL;
   list->_num_elements = 0;
@@ -452,15 +449,15 @@ void _ll_delete_internal (ll_t *list, bool do_free) {
     _ll_item_t *item = list->_first;
     while (item) {
       if (do_free) {
-        jfree(item->_value);
+        free(item->_value);
       }
       _ll_item_t *next = item->_next;
-      jfree(item);
+      free(item);
       item = next;
     }
   }
-  jfree(list->_type);
-  jfree(list);
+  free(list->_type);
+  free(list);
 }
 
 void _ll_delete (ll_t *list) {
@@ -472,7 +469,7 @@ void _ll_deletef (ll_t *list) {
 }
 
 void _ll_add (ll_t* list, void *value) {
-  _ll_item_t *item = jmalloc(sizeof(_ll_item_t));
+  _ll_item_t *item = malloc(sizeof(_ll_item_t));
   item->_value = value;
   item->_next = NULL;
   item->_prev = NULL;
@@ -573,7 +570,7 @@ void _ll_remove (ll_t *list, size_t index) {
     list->_last = replacement;
   }
   list->_num_elements--;
-  jfree(item);
+  free(item);
 }
 
 size_t _ll_size (ll_t *list) {
@@ -632,7 +629,7 @@ void _scanner_read_file () {
   rewind(file);
 
   _scanner_input_length = file_size + 1;
-  _scanner_input = jmalloc(_scanner_input_length);
+  _scanner_input = malloc(_scanner_input_length);
   _scanner_input[_scanner_input_length - 1] = '\0';
 
   size_t bytes_read = fread(_scanner_input, 1, file_size, file);
@@ -680,7 +677,7 @@ char *scanner_consume (size_t num_chars) {
   if (_scanner_index + num_chars >= _scanner_input_length) {
     num_chars = _scanner_input_length - _scanner_index;
   }
-  char *representation = jmalloc(num_chars + 1);
+  char *representation = malloc(num_chars + 1);
   representation[num_chars] = '\0';
   strncpy(representation, _scanner_input + _scanner_index, num_chars);
   _scanner_index = _scanner_index + num_chars;
@@ -692,7 +689,7 @@ void scanner_scan () {
 }
 
 void scanner_cleanup () {
-  jfree(_scanner_input);
+  free(_scanner_input);
 }
 
 void setup_scanner () {
@@ -727,7 +724,7 @@ size_t _tokenizer_tokenize_whitespace () {
       _tokenizer_col++;
     }
     length++;
-    jfree(scanner.consume(1));
+    free(scanner.consume(1));
   }
   return length;
 }
@@ -835,11 +832,11 @@ void _tokenizer_skip_extras () {
   for (; ; ) {
     _tokenizer_tokenize_whitespace(scanner.next());
     if (representation = _tokenizer_tokenize_comment_single()) {
-      jfree(representation);
+      free(representation);
       continue;
     }
     if (representation = _tokenizer_tokenize_comment_multi()) {
-      jfree(representation);
+      free(representation);
       continue;
     }
     break;
@@ -889,9 +886,9 @@ token_t **tokenizer_consume (size_t num_tokens) {
   if (_tokenizer_tokens_index + num_tokens >= _tokenizer_tokens_size) {
     num_tokens = _tokenizer_tokens_size - _tokenizer_tokens_index;
   }
-  token_t **tokens = jmalloc(num_tokens * sizeof(token_t *));
+  token_t **tokens = malloc(num_tokens * sizeof(token_t *));
   for (int i = 0; i < num_tokens; i++) {
-    token_t *token = jmalloc(sizeof(token_t));
+    token_t *token = malloc(sizeof(token_t));
     memcpy(token, _tokenizer_tokens[_tokenizer_tokens_index + i], sizeof(token_t));
     tokens[i] = token;
   }
@@ -906,28 +903,28 @@ token_t *_tokenizer_next () {
   _tokenizer_skip_extras();
 
   if ((representation = _tokenizer_tokenize_keyword()) != NULL) {
-    token = jmalloc(sizeof(token_t));
+    token = malloc(sizeof(token_t));
     token->representation = representation;
     token->token_type_primary = KEYWORD;
     token->token_type_secondary = _tokenizer_representation_to_secondary(representation);
     goto _return;
   }
   if ((representation = _tokenizer_tokenize_identifier()) != NULL) {
-    token = jmalloc(sizeof(token_t));
+    token = malloc(sizeof(token_t));
     token->representation = representation;
     token->token_type_primary = IDENTIFIER;
     token->token_type_secondary = _tokenizer_representation_to_secondary(representation);
     goto _return;
   }
   if ((representation = _tokenizer_tokenize_integer_literal()) != NULL) {
-    token = jmalloc(sizeof(token_t));
+    token = malloc(sizeof(token_t));
     token->representation = representation;
     token->token_type_primary = LITERAL;
     token->token_type_secondary = _tokenizer_representation_to_secondary(representation);
     goto _return;
   }
   if ((representation = _tokenizer_tokenize_operator()) != NULL) {
-    token = jmalloc(sizeof(token_t));
+    token = malloc(sizeof(token_t));
     token->representation = representation;
     token->token_type_primary = OPERATOR;
     token->token_type_secondary = _tokenizer_representation_to_secondary(representation);
@@ -939,10 +936,10 @@ token_t *_tokenizer_next () {
 }
 
 char *tokenizer_token_as_string (token_t *token) {
-  char *string = jmalloc(64);
+  char *string = malloc(64);
   char *representation = token->representation;
-  char *type_primary = jmalloc(64);
-  char *type_secondary = jmalloc(64);
+  char *type_primary = malloc(64);
+  char *type_secondary = malloc(64);
   switch (token->token_type_primary) {
     case (KEYWORD):
       strncpy(type_primary, "keyword", strlen("keyword"));
@@ -1099,7 +1096,7 @@ token_t *tokenizer_next () {
 
 void _tokenizer_tokenize () {
   scanner.scan();
-  token_t **tokens = jmalloc(sizeof(token_t *));
+  token_t **tokens = malloc(sizeof(token_t *));
   size_t tokens_size = 1;
   size_t tokens_index = 0;
   token_t *token;
@@ -1169,7 +1166,7 @@ node_t *_parser_try_declaration () {
     tokenizer.consume(1); // TODO
     _parser_expect_secondary(DELIMITER_SEMI);
     tokenizer.consume(1); // TODO
-    node = jmalloc(sizeof(node_t));
+    node = malloc(sizeof(node_t));
     node->type = strdup("declaration");
     node->num_children = 0;
     node->children = NULL;
@@ -1315,7 +1312,7 @@ void test_ll () {
 void test_memory () {
   TEST_SUITE;
   if (J_MEM_DEBUG) {
-    printf("%d bytes not jfree'd\n", (int) (j_mem_size() - glbl_tests_mem_start));
+    printf("%d bytes not free'd\n", (int) (j_mem_size() - glbl_tests_mem_start));
   }
   if (j_mem_size() - glbl_tests_mem_start) {
     TEST_FAIL;
